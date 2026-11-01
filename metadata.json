@@ -1,0 +1,6 @@
+{
+  "name": "Smart Media Saver",
+  "description": "Universal Media Downloader & Smart Media Manager with share sheet integration, web browser, smart clipboard detection, and local gallery by HARIOM.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

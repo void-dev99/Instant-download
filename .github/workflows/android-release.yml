@@ -1,0 +1,121 @@
+name: Android Build & Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      release_version:
+        description: 'Release version (e.g., v1.0.1)'
+        required: false
+        default: 'v1.0.1'
+
+permissions:
+  contents: write
+
+jobs:
+  build-and-release:
+    name: Build APK and Create GitHub Release
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v3
+        with:
+          cache-read-only: false
+
+      - name: Grant Execute Permission to Gradle
+        run: |
+          if [ -f "./gradlew" ]; then
+            chmod +x ./gradlew
+          fi
+
+      - name: Run Unit Tests
+        run: |
+          gradle :app:testDebugUnitTest --no-daemon
+
+      - name: Build Debug APK
+        run: |
+          gradle :app:assembleDebug --no-daemon
+
+      - name: Verify APK Existence & Prepare Assets
+        id: prepare_assets
+        run: |
+          APK_PATH=$(find app/build/outputs/apk/debug -name "*.apk" | head -n 1)
+          if [ -z "$APK_PATH" ] || [ ! -f "$APK_PATH" ]; then
+            echo "ERROR: APK was not generated!"
+            exit 1
+          fi
+          echo "Found APK at: $APK_PATH"
+          
+          TAG_NAME="${{ github.ref_name }}"
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            TAG_NAME="${{ github.event.inputs.release_version }}"
+          fi
+          if [ -z "$TAG_NAME" ]; then
+            TAG_NAME="v1.0.1"
+          fi
+          
+          RELEASE_APK="SmartMediaSaver-${TAG_NAME}.apk"
+          cp "$APK_PATH" "$RELEASE_APK"
+          
+          # Compute SHA-256 Checksum
+          sha256sum "$RELEASE_APK" > "${RELEASE_APK}.sha256"
+          cat "${RELEASE_APK}.sha256"
+          
+          echo "apk_path=$RELEASE_APK" >> $GITHUB_OUTPUT
+          echo "checksum_path=${RELEASE_APK}.sha256" >> $GITHUB_OUTPUT
+          echo "tag_name=$TAG_NAME" >> $GITHUB_OUTPUT
+
+      - name: Upload APK Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: SmartMediaSaver-APK
+          path: |
+            ${{ steps.prepare_assets.outputs.apk_path }}
+            ${{ steps.prepare_assets.outputs.checksum_path }}
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch'
+        with:
+          name: Smart Media Saver ${{ steps.prepare_assets.outputs.tag_name }}
+          tag_name: ${{ steps.prepare_assets.outputs.tag_name }}
+          draft: false
+          prerelease: false
+          files: |
+            ${{ steps.prepare_assets.outputs.apk_path }}
+            ${{ steps.prepare_assets.outputs.checksum_path }}
+          body: |
+            ## Smart Media Saver ${{ steps.prepare_assets.outputs.tag_name }}
+            
+            Universal Media Downloader & Smart Media Manager for Android by **HARIOM**.
+            
+            ### What's New:
+            - **Universal UI Redesign**: Balanced Material 3 color system with Light, Dark, and System Default theme support.
+            - **Android Share Sheet Integration**: Share links directly from Instagram, Reddit, X, Pinterest, Facebook, or web browsers.
+            - **Universal Media Detection Engine**: Direct video, image, animated GIF, audio, and document sniffer.
+            - **Built-in Web Browser**: Integrated browser with live media sniffer and 1-tap download FAB.
+            - **Local Media Gallery**: Media categorization, preview thumbnails, open in external players, and system share.
+            - **Smart Clipboard Detection**: Seamless copied link detection when app is active with zero background battery drain.
+            
+            ### Download & Verification:
+            - **Package**: `com.aistudio.smartmediasaver.hrom`
+            - **Checksum File**: See attached `.sha256` file to verify integrity.
+            
+            ### Developer:
+            Created and maintained with ❤️ by **HARIOM**.
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
